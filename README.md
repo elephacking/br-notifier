@@ -1,28 +1,25 @@
-# GoPhish Notifier
+# BruteRatel Notifier
 
-GoPhish Notifier notifies red team members when their GoPhish campaign status
+BruteRatel Notifier notifies red team members when their BruteRatel badger status
 has been updated. It supports both Slack and Email notification profiles by
 default, but it's very extensible so new notification profiles can be added
 easily.
 
+This Project is modified from: https://github.com/t94j0/gophish-notifier
 
 ## Installation
 
 ### From Source
 
 ```bash
-git clone https://github.com/t94j0/gophish-webhook-slack
-cd gophish-webhook-slack
-go build -o phishbot
+git clone https://github.com/elephacking/br-notifier
+cd br-notifier
+go build -o br-notifier
 ```
-
-### Ansible
-
-See [ansible-gophish-notifier](https://github.com/t94j0/ansible-gophish-notifier)
 
 ## Configuration
 
-The configuration path is `/etc/gophish_notifier/config.yml`. Below is an example config:
+The configuration path is `/etc/br_notifier/config.yml`. Below is an example config:
 
 ```yaml
 # Host to listen on. If GoPhish is running on the same host, you can set this to 127.0.0.1
@@ -31,12 +28,8 @@ listen_host: 0.0.0.0
 listen_port: 9999
 # Webhook path. The full address will be http://<host>:<ip><webhook_path>. Ex: http://127.0.0.1:9999/webhook
 webhook_path: /webhook
-# Secret for GoPhish authentication
-secret: secretpassword123
 # Log level. Log levels are panic, fatal, error, warning, info, debug, trace.
 log_level: debug
-# (Optional) Base URL of GoPhish instance so that Slack notifications can link to campaign
-base_url: https://10.0.0.15:3333
 # Enables sending profiles. Options are `slack` and `email`. Make sure to configure the required parameters for each profile
 profiles:
   - slack
@@ -47,9 +40,9 @@ slack:
   # Webhook address. Typically starts with https://hooks.slack.com/services/...
   webhook: '<Your Slack Webhook>'
   # Username displayed in Slack
-  username: PhishBot
+  username: BRBot
   # Channel to post in
-  channel: '#testing2'
+  bot_channel: '#testing2'
   # Bot profile picture
   emoji: ':blowfish:'
   # (Optional) Disable email, username, and credentials from being sent to Slack
@@ -69,16 +62,20 @@ email:
   host_addr: smtp.gmail.com:587
 
 # You can also supply an email template for each notification
-email_submitted_credentials_template: |
-  Someone submitted credentials!
-  Email ID - {{ .ID }}
-  Email Address - {{ .Email }}
-  IP Address - {{ .Address }}
-  User Agent - {{ .UserAgent }}
-  Username - {{ .Username }}
-  Password - {{ .Password }}
+email_config_template: |
+  You caught a new badger!
+Badger ID - {{ .Badger }}
+Badger User ID - {{ .Config.User_id }}
+Badger Hostname - {{ .Config.Hostname }}
+Badger Localip - {{ .Config.Localip }}
+Badger Process Name - {{ .Config.Process_name }}
+Badger Process ID - {{ .Config.Process_id }}
+Badger Last Seen - {{ .Config.Last_seen }}
+Badger Windows Version - {{ .Config.Windows_version }}
+Badger OS Build - {{ .Config.Bld }}
 ```
 
-Project inspired by [gophish-notifications]
+Project inspired by [gophish-notifier]
 
+[gophish-notifier]: https://github.com/t94j0/gophish-notifier
 [gophish-notifications]: https://github.com/dunderhay/gophish-notifications

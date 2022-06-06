@@ -3,8 +3,9 @@ package main
 import (
 	"encoding/json"
 	"html/template"
-	"net/url"
 	"strings"
+	"strconv"
+	"encoding/base64"
 
 	"github.com/ashwanthkumar/slack-go-webhook"
 	log "github.com/sirupsen/logrus"
@@ -13,9 +14,8 @@ import (
 
 // Can't be const because need reference to variable for Slack webhook title
 var (
-	ClickedLink   string = "Clicked Link"
-	SubmittedData string = "Submitted Data"
-	EmailOpened   string = "Email Opened"
+	CONFIG  string = "New Badger"
+	MESSAGE string = "Command Output"
 )
 
 type Sender interface {
@@ -24,27 +24,21 @@ type Sender interface {
 }
 
 func senderDispatch(status string, webhookResponse WebhookResponse, response []byte) (Sender, error) {
-	if status == ClickedLink {
-		return NewClickDetails(webhookResponse, response)
+	if status == "CONFIG" {
+		return NewConfigDetails(webhookResponse, response)
 	}
-	if status == EmailOpened {
-		return NewOpenedDetails(webhookResponse, response)
-	}
-	if status == SubmittedData {
-		return NewSubmittedDetails(webhookResponse, response)
+	if status == "MESSAGE" {
+		return NewMessageDetails(webhookResponse, response)
 	}
 	log.Warn("unknown status:", status)
 	return nil, nil
 }
 
 // More information about events can be found here:
-// https://github.com/gophish/gophish/blob/db63ee978dcd678caee0db71e5e1b91f9f293880/models/result.go#L50
 type WebhookResponse struct {
-	Success    bool   `json:"success"`
-	CampaignID uint   `json:"campaign_id"`
-	Message    string `json:"message"`
-	Details    string `json:"details"`
-	Email      string `json:"email"`
+	Badger    string   `json:"badger"`
+	Config    *ConfigDetails   `json:"badger_config"`
+	Message   string `json:"badger_msg"`
 }
 
 func NewWebhookResponse(body []byte) (WebhookResponse, error) {
@@ -55,124 +49,120 @@ func NewWebhookResponse(body []byte) (WebhookResponse, error) {
 	return response, nil
 }
 
-type EventDetails struct {
-	Payload url.Values        `json:"payload"`
-	Browser map[string]string `json:"browser"`
+type ConfigDetails struct {
+	Arch string `json:"b_arch"`
+	Bld string `json:"b_bld"`
+	C2 string `json:"b_c2"`
+	C2_id string `json:"b_c2_id"`
+	Cookie string `json:"b_cookie"`
+	Hostname string `json:"b_h_name"`
+	Localip string `json:"b_l_ip"`
+	Process_name string `json:"b_p_name"`
+	Process_id string `json:"b_pid"`
+	Last_seen string `json:"b_seen"`
+	User_id string `json:"b_uid"`
+	Windows_version string `json:"b_wver"`
+	Dead bool `json:"dead"`
+	Is_pvt bool `json:"is_pvt"`
+	Pipeline string `json:"pipeline"`
+	Pvt_master string `json:"pvt_master"`
 }
 
-func NewEventDetails(detailsRaw []byte) (EventDetails, error) {
-	var details EventDetails
+type MessageConfigDetails struct {
+	Badger string
+	Config ConfigDetails
+}
+
+func NewConfigDetails(response WebhookResponse, detailsRaw []byte) (MessageConfigDetails, error) {
+	var details ConfigDetails
+	msgDetails := MessageConfigDetails{
+		Badger: response.Badger,
+		Config: ConfigDetails{},
+	} 
 	if err := json.Unmarshal(detailsRaw, &details); err != nil {
-		return EventDetails{}, err
+		return msgDetails, err
 	}
-	return details, nil
+	msgDetails.Config = details;
+	return msgDetails, nil
 }
 
-func (e EventDetails) ID() string {
-	return e.Payload.Get("id")
-}
-
-func (e EventDetails) UserAgent() string {
-	return e.Browser["user-agent"]
-}
-func (e EventDetails) Address() string {
-	return e.Browser["address"]
-}
-
-type SubmittedDetails struct {
-	CampaignID uint
-	ID         string
-	Email      string
-	Address    string
-	UserAgent  string
-	Username   string
-	Password   string
-}
-
-func NewSubmittedDetails(response WebhookResponse, detailsRaw []byte) (SubmittedDetails, error) {
-	details, err := NewEventDetails(detailsRaw)
-	if err != nil {
-		return SubmittedDetails{}, err
-	}
-	submittedDetails := SubmittedDetails{
-		CampaignID: response.CampaignID,
-		ID:         details.ID(),
-		Address:    details.Address(),
-		UserAgent:  details.UserAgent(),
-		Email:      response.Email,
-		Username:   details.Payload.Get("username"),
-		Password:   details.Payload.Get("password"),
-	}
-	return submittedDetails, nil
-}
-
-func (w SubmittedDetails) SendSlack() error {
-	red := "#f05b4f"
-	attachment := slack.Attachment{Title: &SubmittedData, Color: &red}
-	attachment.AddField(slack.Field{Title: "ID", Value: w.ID})
-	attachment.AddField(slack.Field{Title: "Address", Value: slackFormatIP(w.Address)})
-	attachment.AddField(slack.Field{Title: "User Agent", Value: w.UserAgent})
-	if !viper.GetBool("slack.disable_credentials") {
-		attachment.AddField(slack.Field{Title: "Email", Value: w.Email})
-		attachment.AddField(slack.Field{Title: "Username", Value: w.Username})
-		attachment.AddField(slack.Field{Title: "Password", Value: w.Password})
-	}
-	attachment = addCampaignButton(attachment, w.CampaignID)
-	return sendSlackAttachment(attachment)
-}
-
-func (w SubmittedDetails) SendEmail() error {
-	templateString := viper.GetString("email_submitted_credentials_template")
-	body, err := getEmailBody(templateString, w)
-	if err != nil {
-		return err
-	}
-	return sendEmail("PhishBot - Credentials Submitted", body)
-}
-
-type ClickDetails struct {
-	CampaignID uint
-	ID         string
-	Email      string
-	Address    string
-	UserAgent  string
-}
-
-func NewClickDetails(response WebhookResponse, detailsRaw []byte) (ClickDetails, error) {
-	details, err := NewEventDetails(detailsRaw)
-	if err != nil {
-		return ClickDetails{}, err
-	}
-	clickDetails := ClickDetails{
-		CampaignID: response.CampaignID,
-		ID:         details.ID(),
-		Address:    details.Address(),
-		Email:      response.Email,
-		UserAgent:  details.UserAgent(),
-	}
-	return clickDetails, nil
-}
-
-func (w ClickDetails) SendSlack() error {
+func (w MessageConfigDetails) SendSlack() error {
 	orange := "#ffa500"
-	attachment := slack.Attachment{Title: &ClickedLink, Color: &orange}
-	attachment.AddField(slack.Field{Title: "ID", Value: w.ID})
-	attachment.AddField(slack.Field{Title: "Address", Value: slackFormatIP(w.Address)})
-	attachment.AddField(slack.Field{Title: "User Agent", Value: w.UserAgent})
-	if !viper.GetBool("slack.disable_credentials") {
-		attachment.AddField(slack.Field{Title: "Email", Value: w.Email})
+	red := "#f05b4f"
+	attachment := slack.Attachment{}
+	if w.Config.User_id[0] == '*' {
+		attachment = slack.Attachment{Title: &CONFIG, Color: &red}
+	} else {
+		attachment = slack.Attachment{Title: &CONFIG, Color: &orange}
 	}
-	attachment = addCampaignButton(attachment, w.CampaignID)
+	attachment.AddField(slack.Field{Title: "Badger ID", Value: w.Badger})
+	attachment.AddField(slack.Field{Title: "Badger Hostname", Value: w.Config.Hostname})
+	attachment.AddField(slack.Field{Title: "Badger User ID", Value: w.Config.User_id})
+	attachment.AddField(slack.Field{Title: "Badger Windows Version", Value: w.Config.Windows_version})
+	attachment.AddField(slack.Field{Title: "Badger OS Build", Value: w.Config.Bld})
+	attachment.AddField(slack.Field{Title: "Badger C2", Value: w.Config.C2})
+	attachment.AddField(slack.Field{Title: "Badger C2 ID", Value: w.Config.C2_id})
+	attachment.AddField(slack.Field{Title: "Badger Cookie", Value: w.Config.Cookie})
+	attachment.AddField(slack.Field{Title: "Badger Localip", Value: w.Config.Localip})
+	attachment.AddField(slack.Field{Title: "Badger Process Name", Value: w.Config.Process_name})
+	attachment.AddField(slack.Field{Title: "Badger Process ID", Value: w.Config.Process_id})
+	attachment.AddField(slack.Field{Title: "Badger Last Seen", Value: w.Config.Last_seen})
+	attachment.AddField(slack.Field{Title: "Badger is Dead?", Value: strconv.FormatBool(w.Config.Dead)})
+	attachment.AddField(slack.Field{Title: "Badger Is Pvt?", Value: strconv.FormatBool(w.Config.Is_pvt)})
+	attachment.AddField(slack.Field{Title: "Badger Pipeline", Value: w.Config.Pipeline})
+	attachment.AddField(slack.Field{Title: "Badger Pvt Master", Value: w.Config.Pvt_master})
 	return sendSlackAttachment(attachment)
 }
 
-func (w ClickDetails) SendEmail() error {
-	templateString := viper.GetString("email_send_click_template")
+func (w MessageConfigDetails) SendEmail() error {
+	templateString := viper.GetString("email_config_template")
 	body, err := getEmailBody(templateString, w)
 	if err != nil {
 		return err
 	}
-	return sendEmail("PhishBot - Email Clicked", body)
+	return sendEmail("BRBot - Initial Connection", body)
+}
+
+type MessageDetails struct {
+	Message    string
+}
+
+type MessageMessageDetails struct {
+	Badger string
+	Message MessageDetails
+}
+
+func NewMessageDetails(response WebhookResponse, detailsRaw []byte) (MessageMessageDetails, error) {
+	var details MessageDetails
+	msgDetails := MessageMessageDetails{
+		Badger: response.Badger,
+		Message: MessageDetails{},
+	} 
+	data := make([]byte, base64.StdEncoding.DecodedLen(len(detailsRaw)))
+	if n, err := base64.StdEncoding.Decode(data, detailsRaw); err != nil {
+		return msgDetails, err
+	} else {
+		details.Message = string(data[:n])
+		msgDetails.Message = details
+	}
+	return msgDetails, nil
+}
+
+func (w MessageMessageDetails) SendSlack() error {
+	white := "#ffffff"
+	attachment := slack.Attachment{Title: &MESSAGE, Color: &white}
+	attachment.AddField(slack.Field{Title: "Badger ID", Value: w.Badger})
+	attachment.AddField(slack.Field{Title: "Command Output", Value: w.Message.Message})
+	return sendSlackAttachment(attachment)
+}
+
+func (w MessageMessageDetails) SendEmail() error {
+	templateString := viper.GetString("email_message_template")
+	body, err := getEmailBody(templateString, w)
+	if err != nil {
+		return err
+	}
+	return sendEmail("BRBot - Command Output", body)
 }
 
 func getEmailBody(templateValue string, obj interface{}) (string, error) {
@@ -185,49 +175,4 @@ func getEmailBody(templateValue string, obj interface{}) (string, error) {
 		return "", err
 	}
 	return out.String(), nil
-}
-
-type OpenedDetails struct {
-	CampaignID uint
-	ID         string
-	Email      string
-	Address    string
-	UserAgent  string
-}
-
-func NewOpenedDetails(response WebhookResponse, detailsRaw []byte) (OpenedDetails, error) {
-	details, err := NewEventDetails(detailsRaw)
-	if err != nil {
-		return OpenedDetails{}, err
-	}
-	clickDetails := OpenedDetails{
-		CampaignID: response.CampaignID,
-		ID:         details.ID(),
-		Email:      response.Email,
-		Address:    details.Address(),
-		UserAgent:  details.UserAgent(),
-	}
-	return clickDetails, nil
-}
-
-func (w OpenedDetails) SendSlack() error {
-	yellow := "#ffff00"
-	attachment := slack.Attachment{Title: &EmailOpened, Color: &yellow}
-	attachment.AddField(slack.Field{Title: "ID", Value: w.ID})
-	attachment.AddField(slack.Field{Title: "Address", Value: slackFormatIP(w.Address)})
-	attachment.AddField(slack.Field{Title: "User Agent", Value: w.UserAgent})
-	if !viper.GetBool("slack.disable_credentials") {
-		attachment.AddField(slack.Field{Title: "Email", Value: w.Email})
-	}
-	attachment = addCampaignButton(attachment, w.CampaignID)
-	return sendSlackAttachment(attachment)
-}
-
-func (w OpenedDetails) SendEmail() error {
-	templateString := viper.GetString("email_send_click_template")
-	body, err := getEmailBody(templateString, w)
-	if err != nil {
-		return err
-	}
-	return sendEmail("PhishBot - Email Opened", body)
 }

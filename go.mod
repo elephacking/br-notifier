@@ -1,4 +1,4 @@
-module github.com/t94j0/gophish-notifier
+module github.com/elephacking/br-notifier
 
 go 1.12
 

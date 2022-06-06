@@ -5,27 +5,34 @@ import (
 	"github.com/spf13/viper"
 )
 
-var defaultClickedTemplate = `Email ID - {{ .ID }}
-Email Address -  {{ .Email }}
-IP Address - {{ .Address }}
-User Agent - {{ .UserAgent }}`
+var defaultConfigTemplate = `Badger ID - {{ .Badger }}
+Badger OS Build - {{ .Config.Bld }}
+Badger C2 - {{ .Config.C2 }}
+Badger C2 ID - {{ .Config.C2_id }}
+Badger Cookie - {{ .Config.Cookie }}
+Badger Hostname - {{ .Config.Hostname }}
+Badger Localip - {{ .Config.Localip }}
+Badger Process Name - {{ .Config.Process_name }}
+Badger Process ID - {{ .Config.Process_id }}
+Badger Last Seen - {{ .Config.Last_seen }}
+Badger User ID - {{ .Config.User_id }}
+Badger Windows Version - {{ .Config.Windows_version }}
+Badger is Dead? - {{ .Config.Dead }}
+Badger Is Pvt?", {{ .Config.Is_pvt }}
+Badger Pipeline - {{ .Config.Pipeline }}
+Badger Pvt Master - {{ .Config.Pvt_master }}`
 
-var defaultSubmittedCredentailsTemplate = `Email ID - {{ .ID }}
+var defaultMessageTemplate = `Email ID - {{ .ID }}
 Email Address - {{ .Email }}
 IP Address - {{ .Address }}
 User Agent - {{ .UserAgent }}
 Username - {{ .Username }}
 Password - {{ .Password }}`
 
-var defaultEmailOpenedTemplate = `Email ID - {{ .ID }}
-Email Address - {{ .Email }}
-IP Address - {{ .Address }}
-User Agent - {{ .UserAgent }}`
-
 func init() {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
-	viper.AddConfigPath("/etc/gophish_notifier")
+	viper.AddConfigPath("/etc/br_notifier")
 	viper.AddConfigPath(".")
 	setDefaults()
 	if err := viper.ReadInConfig(); err != nil {
@@ -38,16 +45,13 @@ func init() {
 
 func setDefaults() {
 	viper.SetDefault("log_level", "info")
-	viper.SetDefault("slack.bot_username", "PhishBot")
+	viper.SetDefault("slack.bot_username", "BRBot")
 	viper.SetDefault("slack.bot_emoji", ":blowfish:")
-	viper.SetDefault("slack.disable_credentials", false)
 	viper.SetDefault("listen_host", "0.0.0.0")
-	viper.SetDefault("ip_query_base", "https://whatismyipaddress.com/ip/")
 	viper.SetDefault("listen_port", "9999")
 	viper.SetDefault("webhook_path", "/webhook")
-	viper.SetDefault("email_send_click_template", defaultClickedTemplate)
-	viper.SetDefault("email_submitted_credentials_template", defaultSubmittedCredentailsTemplate)
-	viper.SetDefault("email_default_email_open_template", defaultEmailOpenedTemplate)
+	viper.SetDefault("email_config_template", defaultConfigTemplate)
+	viper.SetDefault("email_message_template", defaultMessageTemplate)
 	viper.SetDefault("profiles", []string{"slack"})
 }
 
@@ -68,7 +72,7 @@ func validateConfig() {
 		}
 	}
 
-	globalConfigs := []string{"secret", "profiles"}
+	globalConfigs := []string{"profiles"}
 	checkKeysExist(globalConfigs...)
 
 	profiles := viper.GetStringSlice("profiles")
